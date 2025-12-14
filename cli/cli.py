@@ -9,13 +9,12 @@
     fix_my_csv --help
 """
 
+from pathlib import Path
 from typing import Any, Optional
 
 import typer
 from rich.console import Console
 from rich.text import Text
-from pathlib import Path
-
 
 app = typer.Typer(
     name="Fix My CSV CLI Tool",
@@ -30,11 +29,12 @@ INDEX_FILE_NAME = "files_to_process.json"
 
 def style_message(msg: Any, color: str = "green", emphasis: Optional[str] = "bold") -> Text:
     """Style a message using rich Text object."""
+    # Refined to use Rich's Text object directly for native styling
     style = f"{emphasis} {color}" if emphasis else color
     return Text(str(msg), style=style)
 
 
-@app.command(name="show")
+@app.command(name="show") # Explicitly name the command to avoid confusion
 def show_message(msg: str) -> None:
     """Show a message using rich console with blue, italic style."""
     fmt_msg = style_message(msg, "blue", "italic")
@@ -43,7 +43,7 @@ def show_message(msg: str) -> None:
 
 @app.command()
 def index(root: Path):
-    """[bold yellow]STAGE 1:[/bold yellow] Runs the Go indexer to create the file manifest."""
+    """STAGE 1:Runs the Go indexer to create the file manifest."""
     # Your core logic for index goes here...
     console.print(style_message(f"Starting index from {root}...", "cyan"))
 
