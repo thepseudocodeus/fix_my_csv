@@ -1,0 +1,21 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  default:
+    desc: Default task = show tasks
+    cmds:
+      - task -a
+    silent: true
+
+  init:py:
+    desc: Add key python packages to environment
+    cmds:
+      - uv pip compile requirements.in -o requirements.txt
+      #- uv add -r requirements.in -c requirements.txt
+      - sleep 0.33
+      - uv add -r requirements.txt
