@@ -19,3 +19,13 @@ tasks:
       #- uv add -r requirements.in -c requirements.txt
       - sleep 0.33
       - uv add -r requirements.txt
+
+  r:main:
+    desc: Run the root directory main.py installed by uv
+    cmds:
+      - uv run main.py
+
+  r:cli:
+    desc: Run the cli.py installed by uv
+    cmds:
+      - uv run python3 -m cli
