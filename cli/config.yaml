@@ -1,0 +1,30 @@
+# config.yaml
+defaults:
+  csv_folder: "./data"
+  backup_folder: "./backups"
+  log_file: "./logs/app.log"
+  parallelism: 4
+  dry_run: true
+
+modules:
+  backup:
+    enabled: true
+    compression: "zst"
+    checksum: "sha256"
+
+  encoding:
+    enabled: true
+    target_encoding: "utf-8"
+    remove_bom: true
+
+  normalize_structure:
+    enabled: true
+    newline: "\n"
+    delimiter: ","
+    add_headers: true
+
+  validate_output:
+    enabled: true
+
+  parquet_export:
+    enabled: false
