@@ -1,0 +1,13 @@
+[package]
+name = "nif_actions"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "nif_actions"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.37.2"
+
+[workspace]

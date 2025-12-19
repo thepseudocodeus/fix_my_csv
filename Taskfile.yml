@@ -25,7 +25,17 @@ tasks:
     cmds:
       - uv run main.py
 
-  r:cli:
+  do:cli:
     desc: Run the cli.py installed by uv
     cmds:
       - uv run python3 -m cli
+
+  ex:orch:
+    desc: Run elixir orchestrator
+    cmds:
+      - cd orchestrate && mix clean && mix deps.get && mix compile
+
+  add:bin:
+    desc: Add a rust binary to execute workspace
+    cmds:
+      - cargo install --path .

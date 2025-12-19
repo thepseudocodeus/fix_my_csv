@@ -1,0 +1,7 @@
+Resolving Hex dependencies...
+Resolution completed in 0.009s
+Unchanged:
+  jason 1.4.4
+  rustler 0.37.1
+All dependencies have been fetched
+Compiling 1 file (.ex)
