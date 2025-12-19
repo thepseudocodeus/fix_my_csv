@@ -1,6 +1,6 @@
 use rustler::NifResult;
 
-
+/// Removes null bytes
 fn remove_null_bytes(input: String) -> String {
     // Replaces null bytes with empty string
     // Notes:
@@ -10,9 +10,21 @@ fn remove_null_bytes(input: String) -> String {
 
 #[rustler::nif]
 pub fn remove_null_bytes_nif(input: String) -> String {
-    remove_null_bytes(input)
+    remove_null_bytes(&input)
 }
 
+/// Remove control characters but retain tab, newline, and carriage returns
+/// Note: Windows and legacy MacOs can use unsupported characters
+fn sanitize_csv_string(input: String) -> String {
+    // Iterate through characters
+    input.chars()
+        .filter(|&c| {
+            matches!() ||
+            () ||
+            c as u32 >= 0x80 // [] TODO: Add rust documentation section on why this is needed for UTF-8
+        })
+        .collect()
+}
 
 #[cfg(test)]
 mod tests {

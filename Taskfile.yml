@@ -39,3 +39,8 @@ tasks:
     desc: Add a rust binary to execute workspace
     cmds:
       - cargo install --path .
+
+  ex:inter:
+    desc: Run elixir interactive repl
+    cmds:
+      - cd orchestrate && iex -S mix
