@@ -67,3 +67,4 @@ tasks:
     desc: Create a new branch
     cmds:
       - git checkout -b {{.BRANCH}}
+      - git push --set-upstream origin {{.BRANCH}}
