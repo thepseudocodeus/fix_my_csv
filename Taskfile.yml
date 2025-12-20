@@ -75,3 +75,13 @@ tasks:
       - git switch main
       - git merge {{.BRANCH}}
       - git push
+
+  ls-branches:
+    desc: List branches
+    cmds:
+      - git branch -v
+
+  ls-branches-all:
+    desc: List all branches
+    cmds:
+      - git branch -a
