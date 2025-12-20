@@ -30,15 +30,14 @@ TODOs:
 - [] TODO: use enums to define valid app states
 """
 
-import sys
 import subprocess
-from typing import Callable, List, Optional
+import sys
 from enum import Enum, auto
+from typing import Callable, List, Optional
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from pydantic import BaseModel, Field
-
 
 # --- Constants ---
 RUN = True # Run git program while True, False exits
@@ -51,16 +50,6 @@ class GitStates(Enum):
     EXIT = auto()
     ERROR = auto()
 
-    @property
-    def name(self):
-        return self.name
-
-    def __str__(self):
-        return f"State: {self.value} - {self.name}" if self.name else self.name
-
-    def __repr__(self):
-        return self.name
-
     def next(self):
         """Moves to the next logical state in the defined order."""
         if self in (GitStates.EXIT, GitStates.ERROR):
@@ -72,6 +61,10 @@ class GitStates(Enum):
             GitStates.RUNNING: GitStates.EXIT
         }
         return sequence.get(self, self)
+
+    def __str__(self):
+        """Represent state in list form."""
+        return f"[{self.name}]"
 
 
 # --- Types ---
@@ -150,6 +143,22 @@ class CLIOrchestrator:
         self._registry: List[GitTask] = []
         self.state = GitStates.INIT
 
+    def update(self, target: GitStates):
+        """Finite state machine for script state model.
+
+        Notes:
+        - Inspired by elm architecture
+        - Should only allow valid transitions
+        """
+        if target == GitStates.ERROR:
+            self.state = target
+            return
+
+        if self.state.next() == target:
+            self.state = target
+        else:
+            raise RuntimeError(f"Invalid state transition: {self.state} -> {target}")
+
     def register(self, task: GitTask):
         self._registry.append(task)
 
@@ -160,7 +169,7 @@ class CLIOrchestrator:
 
     def run_pipeline(self):
         """Execute as Elixir would."""
-        self.state = self.state.next()
+        self.state = self.update(GitStates.RUNNING)
 
         try:
             while self.state == GitStates.RUNNING:
@@ -169,9 +178,9 @@ class CLIOrchestrator:
                 ).execute()
 
                 if selection is None:
-                    self.state = self.state.next()
+                    self.state = self.update(GitStates.EXIT)
                     print("👋 Goodbye")
-                    continue
+                    sys.exit(0)
 
                 if selection:
                     print(f"👉 Executing: {selection.label}")
@@ -181,8 +190,6 @@ class CLIOrchestrator:
             print(f"🚨 Unexpected Error: {e}. Refactor to resolve going forward.")
             self.state = GitStates.EXIT
             sys.exit(1)
-
-        sys.exit(0)
 
 
 # --- Pipeline ---
