@@ -2,13 +2,6 @@ use rustler::{Env, Error, Binary, OwnedBinary};
 use std::borrow::Cow;
 // use rustler::NifResult;
 
-/// Removes null bytes from string
-// fn remove_null_bytes(input: String) -> String {
-//     // Replaces null bytes with empty string
-//     // Notes:
-//     // - To test, moved core functionality into this private function
-//     input.replace("\0", "")
-// }
 
 /// Remove null bytes from binary
 fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
@@ -24,24 +17,6 @@ fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Erro
 pub fn remove_null_bytes_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
     remove_null_bytes(env, input)
 }
-
-// #[rustler::nif]
-// pub fn remove_null_bytes_nif(input: String) -> String {
-//     remove_null_bytes(&input)
-// }
-
-/// Remove control characters but retain tab, newline, and carriage returns
-/// Note: Windows and legacy MacOs can use unsupported characters
-// fn sanitize_csv_string(input: String) -> String {
-//     // Iterate through characters
-//     input.chars()
-//         .filter(|&c| {
-//             matches!(c, '\t' | '\n' | '\r') ||
-//             (c >= ' ' && c <= '~') ||
-//             c as u32 >= 0x80 // [] TODO: Add rust documentation section on why this is needed for UTF-8
-//         })
-//         .collect()
-// }
 
 
 /// Remove control characters except tab, newline, carriage return, and other problematic characters
@@ -59,6 +34,17 @@ pub fn sanitize_csv_binary_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary
     sanitize_csv_binary(env, input)
 }
 
+/// Strip BOM from binary (UTF-8, UTF-16 LE/BE)
+fn strip_bom_binary<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
+    let bytes = strip_bom(input.as_slice());
+    Binary::from_slice(env, bytes)
+}
+
+/// Elixir strip BOM from binary (UTF-8, UTF-16 LE/BE)
+#[rustler::nif]
+pub fn strip_bom_binary_nif<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
+    strip_bom_binary(env, input)
+}
 
 // ----------------------------------------------------------------------------
 // Binary Helpers
@@ -84,6 +70,34 @@ fn normalize_line_endings_cow(input: &str) -> Cow<str> {
     }
 }
 
+/// Detect encoding by BOM or null byte patterns
+/// Notes:
+/// - Do this before removing BOM
+fn detect_encoding(input: Binary) -> String {
+    let bytes = input.as_slice();
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        "utf8_with_bom".to_string()
+    } else if bytes.starts_with(&[0xFF, 0xFE]) {
+        "utf16_le".to_string()
+    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+        "utf16_be".to_string()
+    } else {
+        let null_count = bytes.iter().filter(|&&b| b == 0).count();
+        if null_count > bytes.len() / 4 {
+            "likely_utf16".to_string()
+        } else if bytes.iter().all(|&b| (b >= 0x20 && b <= 0x7E) || matches!(b, 0x09 | 0x0A | 0x0D) || b >= 0x80) {
+            "utf8".to_string()
+        } else {
+            "unknown".to_string()
+        }
+    }
+}
+
+/// Elixir detect encoding by BOM or null byte patterns
+#[rustler::nif]
+pub fn detect_encoding_nif(input: Binary) -> String {
+    detect_encoding(input)
+}
 
 // ----------------------------------------------------------------------------
 // Tests
