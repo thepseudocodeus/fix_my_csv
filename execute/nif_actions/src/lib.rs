@@ -107,7 +107,7 @@ fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
 
 /// Elixir find problematic control bytes
 #[rustler::nif]
-pub fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
+pub fn find_problematic_bytes_nif(input: Binary) -> Vec<(usize, u8)> {
     find_problematic_bytes(input)
 }
 
