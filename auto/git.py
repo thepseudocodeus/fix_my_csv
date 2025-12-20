@@ -10,7 +10,7 @@ Solution:
 Use python script for Task-go to use instead.
 
 Author: AJ Igherighe | The PseudoCodeus
-Created: ~12-17-2025
+Created: ~12-14-2025
 Last Modified: 12-19-2025
 
 Usage:
@@ -40,7 +40,7 @@ from InquirerPy.base.control import Choice
 from pydantic import BaseModel, Field
 
 # --- Constants ---
-RUN = True # Run git program while True, False exits
+RUN = True  # Run git program while True, False exits
 
 
 # --- States ---
@@ -58,7 +58,7 @@ class GitStates(Enum):
         # Added sequence versus prior implementation
         sequence = {
             GitStates.INIT: GitStates.RUNNING,
-            GitStates.RUNNING: GitStates.EXIT
+            GitStates.RUNNING: GitStates.EXIT,
         }
         return sequence.get(self, self)
 
@@ -141,7 +141,7 @@ class GitService:
 class CLIOrchestrator:
     def __init__(self):
         self._registry: List[GitTask] = []
-        self.state = GitStates.INIT
+        self.state = GitStates.INIT # Had to refactor and explicitly set initial seed state
 
     def update(self, target: GitStates):
         """Finite state machine for script state model.
@@ -154,7 +154,7 @@ class CLIOrchestrator:
             self.state = target
             return
 
-        if self.state.next() == target:
+        if self.state.next() == target or self.state == target:
             self.state = target
         else:
             raise RuntimeError(f"Invalid state transition: {self.state} -> {target}")
@@ -203,14 +203,20 @@ def main():
     - status
     - push_to
     """
+    print("Starting...")
+
     orchestrator = CLIOrchestrator()
 
     # Define actions
     orchestrator.register(
-        GitTask(id="ls", label="List Branches Verbose", handler=GitService.list_branches)
+        GitTask(
+            id="ls", label="List Branches Verbose", handler=GitService.list_branches
+        )
     )
     orchestrator.register(
-        GitTask(id="lsa", label="List All Branches", handler=GitService.list_all_branches)
+        GitTask(
+            id="lsa", label="List All Branches", handler=GitService.list_all_branches
+        )
     )
     orchestrator.register(
         GitTask(id="swb", label="Switch To Branch", handler=GitService.switch_branch)
