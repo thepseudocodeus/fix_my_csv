@@ -1,6 +1,54 @@
+/// NIF Action library
+///
+/// version: 0.0.4
+/// date: 12-19-2025
+/// Author: AJ Igherighe | The PseudoCodeus
+/// license: GNU AGPL v3.0
+///
+/// Rust NIF functions implement algorithms to transform input into output for Elixir to orchestration layer.
+/// NIF functions wrap internal functions that directly execute transformations. This allows Rust code to be tested in Rust.
+///
+/// Workflow:
+/// Phases:
+/// 1. From Binary
+/// 2. From Data
+/// 3. From Structure
+///
+/// BINARY
+/// 1. Strip BOM
+/// 2. Santize bytes
+/// 3. Convert to UTF-8
+/// 4. Normalize file endings
+/// 5. Return repaired binary
+///
+/// Notes:
+/// - Should each be orchestrated individually or export a single higher order function?
+///     - Individual approach:
+///         - Pro:
+///             - Can be tested individually
+///             - More efficient
+///             - More data at orchestration
+///         - Con:
+///             - Harder to orchestrate
+///             - Less efficient
+///             - More code
+///     - Single higher order function:
+///         - Pro:
+///             - More efficient
+///             - Less code
+///         - Con:
+///             - Less data at orchestration
+///     - Conclusion:
+///       - Use a single higher order function and log each step in Rust
+///       - Simplifies Elixir orchestration
+///       - Establishes orchestration methodology = each layer is responsible for logging its own steps
+
 use rustler::{Env, Error, Binary, OwnedBinary};
 use std::borrow::Cow;
 // use rustler::NifResult;
+
+
+
 
 
 /// Remove null bytes from binary
@@ -13,6 +61,8 @@ fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Erro
 }
 
 /// Elixir remove null bytes
+/// Notes:
+/// - NIF functions wrap internal functions that execute transformation to allow direct Rust testing
 #[rustler::nif]
 pub fn remove_null_bytes_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
     remove_null_bytes(env, input)
@@ -45,6 +95,11 @@ fn strip_bom_binary<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
 pub fn strip_bom_binary_nif<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
     strip_bom_binary(env, input)
 }
+
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+
 
 // ----------------------------------------------------------------------------
 // Binary Helpers
@@ -93,10 +148,29 @@ fn detect_encoding(input: Binary) -> String {
     }
 }
 
-/// Elixir detect encoding by BOM or null byte patterns
+/// Elixir detect encoding by BOM or null byte patterns before removing BOM
 #[rustler::nif]
 pub fn detect_encoding_nif(input: Binary) -> String {
     detect_encoding(input)
+}
+
+/// Find problematic control bytes
+/// Notes:
+/// - [] TODO: Are there other problem bytes for Windows, Linux, and MacOS? Especially, on non Arch or Debian based systems.
+fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
+    input.as_slice()
+        .iter()
+        .enumerate()
+        .filter(|(_, &b)| matches!(b, 0x00 | 0x01..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F))
+        .map(|(i, &b)| (i, b))
+        .take(100)
+        .collect()
+}
+
+/// Find problematic control bytes
+#[rustler::nif]
+pub fn find_problematic_bytes_nif(input: Binary) -> Vec<(usize, u8)> {
+    find_problematic_bytes(input)
 }
 
 // ----------------------------------------------------------------------------
