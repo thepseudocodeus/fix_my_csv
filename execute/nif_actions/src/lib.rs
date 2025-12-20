@@ -1,4 +1,6 @@
-use rustler::NifResult;
+use rustler::{Env, Error, Binary, OwnedBinary};
+use std::borrow::Cow;
+// use rustler::NifResult;
 
 /// Removes null bytes
 fn remove_null_bytes(input: String) -> String {
@@ -26,6 +28,34 @@ fn sanitize_csv_string(input: String) -> String {
         .collect()
 }
 
+
+// ----------------------------------------------------------------------------
+// Binary Helpers
+// ----------------------------------------------------------------------------
+fn sanitize_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes.iter().copied()
+        .filter(|&b| matches!(b, 0x09 | 0x0A | 0x0D | 0x20..=0x7E) || b >= 0x80)
+        .collect()
+}
+
+fn strip_bom(bytes: &[u8]) -> &[u8] {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { &bytes[3..] }
+    else if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) { &bytes[2..] }
+    else { bytes }
+}
+
+fn normalize_line_endings_cow(input: &str) -> Cow<str> {
+    if input.contains("\r") || input.contains("\n") {
+        Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n"))
+    } else {
+        Cow::Borrowed(input)
+    }
+}
+
+
+// ----------------------------------------------------------------------------
+// Tests
+// ----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +85,32 @@ mod tests {
     fn test_keep_utf8_characters() {
         let input = "Café 漢字 Привет"; // Should not be removed
         let output = sanitize_csv_string(input.to_string());
+    }
+
+    #[test]
+    fn removes_del_character() {
+        let input = format!("Hello{}World", 0x7Fu8 as char);
+        let output = sanitize_csv_string(input);
+        assert_eq!(output, "HelloWorld");
+    }
+
+    #[test]
+    fn keeps_tabs_newlines_and_carriage_returns() {
+        let input = "a\tb\nc\rd";
+        let output = sanitize_csv_string(input.to_string());
+        assert_eq!(output, "a\tb\nc\rd");
+    }
+
+    #[test]
+    fn removes_all_other_controls() {
+        // Control Char Ranges = 0x01–0x08, 0x0B–0x0C, 0x0E–0x1F
+        let bad_chars: String = (1u8..=31)
+            .filter(|&b| !matches!(b, b'\t' | b'\n' | b'\r'))
+            .map(|b| b as char)
+            .collect();
+        let input = format!("Good{}Bad", bad_chars);
+        let output = sanitize_csv_string(input);
+        assert_eq!(output, "GoodBad");
     }
 }
 
