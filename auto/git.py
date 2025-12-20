@@ -1,64 +1,99 @@
 #!/usr/bin/env python3
-"""
-Automates git related actions.
 
-Actions to automate:
-    - list branches verbose
-    - list all branches
+"""
+Automates git actions.
+
+Problem:
+Task-go executes commands in a subprocess which complicates automating git.
+
+Solution:
+Use python script for Task-go to use instead.
+
+Author: AJ Igherighe | The PseudoCodeus
+Created: ~12-17-2025
+Last Modified: 12-19-2025
 
 Usage:
-    uv run python3 -m git
+uv run python3 -m auto.git
 
-Findings:
-    - Inquirerpy, typer, rich, tdqm, etc make interactive interfaces easier.
-    - This refines 3-layer tech stack. Python & Julia can be used for specific automation tasks.
-    - Python provides easy interop and access to many libraries/packages.
-    - Julia makes easy to solve problems from 1st principles with mathematics.
+TODOs:
+- [] TODO: create tests current need to work quickly
+- [] TODO: confirm works as expected in edge cases
+- [] TODO: add more git actions
 """
+
+import sys
+from typing import Callable, List, Optional
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
-from InquirerPy.separator import Separator
-
-"""
-Workflow:
-1. select an action
-"""
+from pydantic import BaseModel, Field
 
 
-def do(action) -> None:
-    action.execute()
+# --- Define ---
+class GitTask(BaseModel):
+    """The mathematical definition of a 'Safe Action'."""
 
-def build_action(msg: str | None = "Select a choice", choices: list | None = None, default: str | None = None) -> object:
-    return inquirer.select(message=msg, choices=choices, default=default)
+    id: str
+    label: str
+    handler: Callable
+    priority: int = Field(default=1, ge=1)  # Constraint: Priority must be >= 1
 
-def list_branches():
-    print("List branches")
+
+# --- How to execute ---
+class GitService:
+    @staticmethod
+    def list_branches():
+        print("🔍 Scanning branches...")
+
+    @staticmethod
+    def sync_repo():
+        print("🔄 Synchronizing manifold state...")
 
 
+# ---  Orchestrate ---
+class CLIOrchestrator:
+    def __init__(self):
+        self._registry: List[GitTask] = []
+
+    def register(self, task: GitTask):
+        self._registry.append(task)
+
+    def _get_choices(self) -> List[Choice]:
+        return [
+            Choice(value=t, name=f"[{t.id.upper()}] {t.label}") for t in self._registry
+        ] + [Choice(value=None, name="Exit")]
+
+    def run_pipeline(self):
+        """Execute as Elixir would."""
+        try:
+            selection: Optional[GitTask] = inquirer.select(
+                message="Select an Invariant Action:", choices=self._get_choices()
+            ).execute()
+
+            if selection:
+                # Execute te bound handler
+                selection.handler()
+            else:
+                print("👋 System gracefully shut down.")
+                sys.exit(0)
+        except Exception as e:
+            print(f"🚨 Safety Breach: {e}. Reverting to safe state.")
+
+
+# --- Pipeline ---
 def main():
-    action = inquirer.select(
-        message="Select an action:",
-        choices=[
-            "Upload",
-            "Download",
-            Choice(value=None, name="Exit"),
-        ],
-        default=None,
-    ).execute()
-    if action:
-        region = inquirer.select(
-            message="Select regions:",
-            choices=[
-                Choice("ap-southeast-2", name="Sydney"),
-                Choice("ap-southeast-1", name="Singapore"),
-                Separator(),
-                "us-east-1",
-                "us-east-2",
-            ],
-            multiselect=True,
-            transformer=lambda result: f"{len(result)} region{'s' if len(result) > 1 else ''} selected",
-        ).execute()
+    orchestrator = CLIOrchestrator()
+
+    # Define actions
+    orchestrator.register(
+        GitTask(id="ls", label="List Verbose", handler=GitService.list_branches)
+    )
+    orchestrator.register(
+        GitTask(id="sync", label="Sync Manifold", handler=GitService.sync_repo)
+    )
+
+    orchestrator.run_pipeline()
 
 
 if __name__ == "__main__":

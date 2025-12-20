@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""
+Automates git related actions.
+
+Actions to automate:
+    - list branches verbose
+    - list all branches
+
+Usage:
+    uv run python3 -m git
+
+Findings:
+    - Inquirerpy, typer, rich, tdqm, etc make interactive interfaces easier.
+    - This refines 3-layer tech stack. Python & Julia can be used for specific automation tasks.
+    - Python provides easy interop and access to many libraries/packages.
+    - Julia makes easy to solve problems from 1st principles with mathematics.
+"""
+
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
+from InquirerPy.separator import Separator
+
+"""
+Workflow:
+1. select an action
+"""
+
+
+def do(action) -> None:
+    """
+    Execute inquirerpy actions here to separate logic from implementation.
+
+    Args:
+        action (_type_): Inquirerpy action providing information for display.
+        [] TODO: discover type
+    """
+    action.execute()
+
+
+def build_action(
+        msg: str | None = "Select a choice",
+        choices: list | None = None,
+        default: str | None = None
+        ) -> object:
+    """Currently use object as output until discover type"""
+    # 1. build choices
+    # 2. set default
+    # 3. set message
+    return inquirer.select(message=msg, choices=choices, default=default)
+
+
+def build_choice(value: object, name: str | None = None) -> object:
+    return Choice(value=value, name=name)
+
+
+def build_choices(*kwargs) -> list:
+    output = []
+    for key, value in kwargs:
+        if key == "choice":
+            output.append(build_choice(value[0], value[1]))
+        else:
+            output.append(value)
+    return output
+
+
+def list_branches():
+    print("List branches")
+
+
+def prepare():
+    print("Prepare to execute ui")
+
+
+def execute():
+    print("Execute ui")
+
+
+def main():
+    choice = {
+        "choice": [],
+        "actions": 
+    }
+    action = inquirer.select(
+        message="Select an action:",
+        choices=[
+            "Upload",
+            "Download",
+            Choice(value=None, name="Exit"),
+        ],
+        default=None,
+    ).execute()
+    if action:
+        region = inquirer.select(
+            message="Select regions:",
+            choices=[
+                Choice("ap-southeast-2", name="Sydney"),
+                Choice("ap-southeast-1", name="Singapore"),
+                Separator(),
+                "us-east-1",
+                "us-east-2",
+            ],
+            multiselect=True,
+            transformer=lambda result: f"{len(result)} region{'s' if len(result) > 1 else ''} selected",
+        ).execute()
+
+
+if __name__ == "__main__":
+    main()
