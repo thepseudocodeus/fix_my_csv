@@ -40,8 +40,8 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from pydantic import BaseModel, Field
 
-# --- 1. THE LOGGING INFRASTRUCTURE (The "Black Box") ---
-# Google Experts use structured logs to avoid guessing.
+# --- Logging ---
+# Use logging instead of print
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(state)s: %(message)s",
@@ -78,19 +78,19 @@ class GitStates(Enum):
 
 # --- Define ---
 class GitTask(BaseModel):
-    """The mathematical definition of a 'Safe Action'."""
+    """Data structure for git operations."""
 
     id: str
     label: str
     handler: Callable
-    priority: int = Field(default=1, ge=1)  # Constraint: Priority must be >= 1
+    priority: int = Field(default=1, ge=1)  # Constraint: Priority must be >= 1 - documentation
 
 
 # --- How to execute ---
 class GitService:
     @staticmethod
     def _run_cmd(args: List[str]):
-        """Helper to ensure all subprocesses are logged and bounded."""
+        """Helper to run with logging."""
         logger.info(f"Executing: {' '.join(args)}", extra={"state": "SUBPROCESS"})
         result = subprocess.run(args, capture_output=True, text=True)
         if result.returncode != 0:
@@ -116,7 +116,7 @@ class GitService:
 
     @staticmethod
     def push_to():
-        # High-signal UX: Use InquirerPy instead of input()
+        # Switched to using inquirer.text from input
         logger.info("Initiating push sequence", extra={"state": "LIMB"})
         branch = inquirer.text(message="Branch name (default 'main'):", default="main").execute()
         msg = inquirer.text(message="Commit message:").execute()
@@ -151,7 +151,7 @@ class CLIOrchestrator:
             self.state = target
             return
 
-        # Use .next() to validate the transition
+        # Ensure valid transition
         if self.state.next() == target or self.state == target:
             old_state = self.state.name
             self.state = target
@@ -190,7 +190,6 @@ class CLIOrchestrator:
 
         except Exception as e:
             # [] TODO: Is more needed here?
-            # Yes, we record the error to the log for post-mortem analysis.
             logger.exception(f"Fatal Failure: {e}", extra={"state": "ERROR"})
             self.update(GitStates.ERROR)
             sys.exit(1)

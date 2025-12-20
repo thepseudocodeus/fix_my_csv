@@ -51,22 +51,8 @@ tasks:
     cmds:
       - cd execute && cargo test
 
-  git-push:
-    desc: Update repo
+# [] TODO: consider using scripts to simplify other commands
+  git:
+    desc: Run git python script
     cmds:
-      - git add .
-      - git commit -m "{{.MSG}}"
-      - git push
-
-  new-branch:
-    desc: Create a new branch
-    cmds:
-      - git checkout -b {{.BRANCH}}
-      - git push --set-upstream origin {{.BRANCH}}
-
-  merge:
-    desc: Merge a branch
-    cmds:
-      - git switch main
-      - git merge {{.BRANCH}}
-      - git push
+      - uv run python3 -m auto.git
