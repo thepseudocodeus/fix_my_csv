@@ -17,20 +17,64 @@ Usage:
 uv run python3 -m auto.git
 
 TODOs:
+- [] TODO: add git status
+- [] TODO: add git push
+- [] TODO: add git merge
+- [] TODO: add git create branch
+- [] TODO: add documentation
 - [] TODO: add logging
 - [] TODO: create tests current need to work quickly
 - [] TODO: confirm works as expected in edge cases
 - [] TODO: add more git actions
 - [] TODO: use a persistent file or database to store git tasks
+- [] TODO: use enums to define valid app states
 """
 
 import sys
 import subprocess
 from typing import Callable, List, Optional
+from enum import Enum, auto
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from pydantic import BaseModel, Field
+
+
+# --- Constants ---
+RUN = True # Run git program while True, False exits
+
+
+# --- States ---
+class GitStates(Enum):
+    INIT = auto()
+    RUNNING = auto()
+    EXIT = auto()
+    ERROR = auto()
+
+    @property
+    def name(self):
+        return self.name
+
+    def __str__(self):
+        return f"State: {self.value} - {self.name}" if self.name else self.name
+
+    def __repr__(self):
+        return self.name
+
+    def next(self):
+        """Moves to the next logical state in the defined order."""
+        if self in (GitStates.EXIT, GitStates.ERROR):
+            return self
+
+        # Added sequence versus prior implementation
+        sequence = {
+            GitStates.INIT: GitStates.RUNNING,
+            GitStates.RUNNING: GitStates.EXIT
+        }
+        return sequence.get(self, self)
+
+
+# --- Types ---
 
 
 # --- Define ---
@@ -56,6 +100,11 @@ class GitService:
         subprocess.run(["git", "branch", "-a"])
 
     @staticmethod
+    def status():
+        print("🔍 Checking status...")
+        subprocess.run(["git", "status"])
+
+    @staticmethod
     def delete_branch():
         print("🔍 Deleting branch...")
 
@@ -68,8 +117,18 @@ class GitService:
         print("🔍 Merging branch...")
 
     @staticmethod
-    def push_branch():
+    def push_to():
         print("🔍 Pushing branch...")
+        msg = input("Enter commit message: ") or None
+        branch = input("Enter branch name: ") or None
+        if branch:
+            if not msg:
+                msg = "Update"
+            subprocess.run(["git", "add", "."])
+            subprocess.run(["git", "commit", "-m", msg])
+            subprocess.run(["git", "push", "origin", branch])
+        else:
+            print("🚨 Sync error encountered. Check logs.")
 
     @staticmethod
     def pull_branch():
@@ -89,6 +148,7 @@ class GitService:
 class CLIOrchestrator:
     def __init__(self):
         self._registry: List[GitTask] = []
+        self.state = GitStates.INIT
 
     def register(self, task: GitTask):
         self._registry.append(task)
@@ -100,20 +160,29 @@ class CLIOrchestrator:
 
     def run_pipeline(self):
         """Execute as Elixir would."""
-        try:
-            selection: Optional[GitTask] = inquirer.select(
-                message="Select a Git Action:", choices=self._get_choices()
-            ).execute()
+        self.state = self.state.next()
 
-            if selection:
-                # Execute te bound handler
-                selection.handler()
-            else:
-                print("👋 System gracefully shut down.")
-                sys.exit(0)
+        try:
+            while self.state == GitStates.RUNNING:
+                selection: Optional[GitTask] = inquirer.select(
+                    message="Select a Git Action:", choices=self._get_choices()
+                ).execute()
+
+                if selection is None:
+                    self.state = self.state.next()
+                    print("👋 Goodbye")
+                    continue
+
+                if selection:
+                    print(f"👉 Executing: {selection.label}")
+                    selection.handler()
         except Exception as e:
-            # [] TODO: implement this
-            print(f"🚨 Safety Breach: {e}. Reverting to safe state.")
+            # [] TODO: Is more needed here?
+            print(f"🚨 Unexpected Error: {e}. Refactor to resolve going forward.")
+            self.state = GitStates.EXIT
+            sys.exit(1)
+
+        sys.exit(0)
 
 
 # --- Pipeline ---
@@ -124,6 +193,8 @@ def main():
     - list_branches
     - list_all_branches
     - switch_branch
+    - status
+    - push_to
     """
     orchestrator = CLIOrchestrator()
 
@@ -136,6 +207,12 @@ def main():
     )
     orchestrator.register(
         GitTask(id="swb", label="Switch To Branch", handler=GitService.switch_branch)
+    )
+    orchestrator.register(
+        GitTask(id="s", label="Check status", handler=GitService.status)
+    )
+    orchestrator.register(
+        GitTask(id="p", label="Push To Repo", handler=GitService.push_to)
     )
 
     orchestrator.run_pipeline()
