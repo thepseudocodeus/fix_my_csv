@@ -68,3 +68,10 @@ tasks:
     cmds:
       - git checkout -b {{.BRANCH}}
       - git push --set-upstream origin {{.BRANCH}}
+
+  merge:
+    desc: Merge a branch
+    cmds:
+      - git switch main
+      - git merge {{.BRANCH}}
+      - git push

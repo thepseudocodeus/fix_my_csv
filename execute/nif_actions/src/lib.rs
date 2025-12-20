@@ -48,9 +48,6 @@ use std::borrow::Cow;
 // use rustler::NifResult;
 
 
-
-
-
 /// Remove null bytes from binary
 fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
     let cleaned: Vec<u8> = input.as_slice().iter().copied().filter(|&b| b != 0).collect();
@@ -94,6 +91,24 @@ fn strip_bom_binary<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
 #[rustler::nif]
 pub fn strip_bom_binary_nif<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
     strip_bom_binary(env, input)
+}
+
+/// Find problematic control bytes
+/// Note: Limited set checked currently
+fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
+    input.as_slice()
+        .iter()
+        .enumerate()
+        .filter(|(_, &b)| matches!(b, 0x00 | 0x01..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F))
+        .map(|(i, &b)| (i, b))
+        .take(100)
+        .collect()
+}
+
+/// Elixir find problematic control bytes
+#[rustler::nif]
+pub fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
+    find_problematic_bytes(input)
 }
 
 // ----------------------------------------------------------------------------
