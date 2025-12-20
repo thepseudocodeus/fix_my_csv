@@ -11,7 +11,7 @@ use std::borrow::Cow;
 // }
 
 /// Remove null bytes from binary
-pub fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
+fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
     let cleaned: Vec<u8> = input.as_slice().iter().copied().filter(|&b| b != 0).collect();
     let mut binary = OwnedBinary::new(cleaned.len())
         .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
@@ -44,16 +44,19 @@ pub fn remove_null_bytes_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'
 // }
 
 
-
-
-/// Remove control characters except tab, newline, carriage return
-#[rustler::nif]
-pub fn sanitize_csv_binary_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
+/// Remove control characters except tab, newline, carriage return, and other problematic characters
+fn sanitize_csv_binary<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
     let cleaned = sanitize_bytes(input.as_slice());
     let mut binary = OwnedBinary::new(cleaned.len())
         .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
     binary.as_mut_slice().copy_from_slice(&cleaned);
     Ok(Binary::from_owned(binary, env))
+}
+
+/// Elixir remove control characters except tab, newline, carriage return, and problematic characters
+#[rustler::nif]
+pub fn sanitize_csv_binary_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
+    sanitize_csv_binary(env, input)
 }
 
 
@@ -72,6 +75,7 @@ fn strip_bom(bytes: &[u8]) -> &[u8] {
     else { bytes }
 }
 
+// Copy on write (COW) avoids unnecessary copy operations
 fn normalize_line_endings_cow(input: &str) -> Cow<str> {
     if input.contains("\r") || input.contains("\n") {
         Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n"))
@@ -88,9 +92,11 @@ fn normalize_line_endings_cow(input: &str) -> Cow<str> {
 mod tests {
     use super::*;
 
-    // [] TODO: update tests to work with new binary functions
+    // [x] TODO: update tests to work with new binary functions
+    // [] TODO: connect to elixir for functionality
     #[test]
     fn test_remove_null_bytes() {
+        // Note: files should not have null bytes
         let input = b"abc\0def\0".as_slice();
         let cleaned = sanitize_bytes(input);
         assert_eq!(cleaned, b"abcdef");
@@ -98,6 +104,7 @@ mod tests {
 
     #[test]
     fn test_strip_bom() {
+        // Windows and other systems can add byte order marks (BOM) to denote encoding
         let utf8_bom = &[0xEF, 0xBB, 0xBF, b'a', b'b', b'c'];
         let stripped = strip_bom(utf8_bom);
         assert_eq!(stripped, b"abc");
@@ -109,6 +116,7 @@ mod tests {
 
     #[test]
     fn test_normalize_line_endings() {
+        // different systems use different line endings
         let input = "line1\rline2\nline3\r\nline4";
         let normalized = normalize_line_endings_cow(input);
         assert_eq!(&normalized, "line1\r\nline2\r\nline3\r\nline4");
