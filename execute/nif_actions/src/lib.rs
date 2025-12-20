@@ -2,30 +2,50 @@ use rustler::{Env, Error, Binary, OwnedBinary};
 use std::borrow::Cow;
 // use rustler::NifResult;
 
-/// Removes null bytes
-fn remove_null_bytes(input: String) -> String {
-    // Replaces null bytes with empty string
-    // Notes:
-    // - To test, moved core functionality into this private function
-    input.replace("\0", "")
+/// Removes null bytes from string
+// fn remove_null_bytes(input: String) -> String {
+//     // Replaces null bytes with empty string
+//     // Notes:
+//     // - To test, moved core functionality into this private function
+//     input.replace("\0", "")
+// }
+
+/// Remove null bytes from binary
+#[rustler::nif]
+pub fn remove_null_bytes_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
+    let cleaned: Vec<u8> = input.as_slice().iter().copied().filter(|&b| b != 0).collect();
+    let mut binary = OwnedBinary::new(cleaned.len())
+        .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
+    binary.as_mut_slice().copy_from_slice(&cleaned);
+    Ok(Binary::from_owned(binary, env))
 }
 
-#[rustler::nif]
-pub fn remove_null_bytes_nif(input: String) -> String {
-    remove_null_bytes(&input)
-}
+// #[rustler::nif]
+// pub fn remove_null_bytes_nif(input: String) -> String {
+//     remove_null_bytes(&input)
+// }
 
 /// Remove control characters but retain tab, newline, and carriage returns
 /// Note: Windows and legacy MacOs can use unsupported characters
-fn sanitize_csv_string(input: String) -> String {
-    // Iterate through characters
-    input.chars()
-        .filter(|&c| {
-            matches!(c, '\t' | '\n' | '\r') ||
-            (c >= ' ' && c <= '~') ||
-            c as u32 >= 0x80 // [] TODO: Add rust documentation section on why this is needed for UTF-8
-        })
-        .collect()
+// fn sanitize_csv_string(input: String) -> String {
+//     // Iterate through characters
+//     input.chars()
+//         .filter(|&c| {
+//             matches!(c, '\t' | '\n' | '\r') ||
+//             (c >= ' ' && c <= '~') ||
+//             c as u32 >= 0x80 // [] TODO: Add rust documentation section on why this is needed for UTF-8
+//         })
+//         .collect()
+// }
+
+/// Remove control characters except tab, newline, carriage return
+#[rustler::nif]
+pub fn sanitize_csv_binary_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
+    let cleaned = sanitize_bytes(input.as_slice());
+    let mut binary = OwnedBinary::new(cleaned.len())
+        .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
+    binary.as_mut_slice().copy_from_slice(&cleaned);
+    Ok(Binary::from_owned(binary, env))
 }
 
 
