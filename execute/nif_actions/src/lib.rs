@@ -42,255 +42,115 @@
 ///       - Use a single higher order function and log each step in Rust
 ///       - Simplifies Elixir orchestration
 ///       - Establishes orchestration methodology = each layer is responsible for logging its own steps
+use rustler::{Env, Error, Binary, OwnedBinary, ResourceArc};
+use encoding_rs::UTF_8;
+use std::sync::RwLock;
+use tracing::{info, warn, span, Level};
 
-use rustler::{Env, Error, Binary, OwnedBinary};
-use std::borrow::Cow;
-// use rustler::NifResult;
-
-
-/// Remove null bytes from binary
-fn remove_null_bytes<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
-    let cleaned: Vec<u8> = input.as_slice().iter().copied().filter(|&b| b != 0).collect();
-    let mut binary = OwnedBinary::new(cleaned.len())
-        .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
-    binary.as_mut_slice().copy_from_slice(&cleaned);
-    Ok(Binary::from_owned(binary, env))
+// --- State ---
+pub struct CsvContext {
+    pub raw_data: RwLock<Vec<u8>>,
+    pub processed_text: RwLock<String>,
 }
 
-/// Elixir remove null bytes
-/// Notes:
-/// - NIF functions wrap internal functions that execute transformation to allow direct Rust testing
-#[rustler::nif]
-pub fn remove_null_bytes_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
-    remove_null_bytes(env, input)
-}
+// --- Cross Platform Interop ---
+impl CsvContext {
+    /// Normalizes across Windows, Mac, and Linux to UTF-8 and Unix Line Endings (\n)
+    fn universal_normalize(bytes: &[u8]) -> (String, String) {
+        // Transcode to UTF-8
+        let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
+        let encoding_name = encoding.name().to_string();
 
+        // Normalize Line Endings to '\n (Unix)
+        let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
 
-/// Remove control characters except tab, newline, carriage return, and other problematic characters
-fn sanitize_csv_binary<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
-    let cleaned = sanitize_bytes(input.as_slice());
-    let mut binary = OwnedBinary::new(cleaned.len())
-        .ok_or(Error::RaiseTerm("Failed to allocate binary"))?;
-    binary.as_mut_slice().copy_from_slice(&cleaned);
-    Ok(Binary::from_owned(binary, env))
-}
-
-/// Elixir remove control characters except tab, newline, carriage return, and problematic characters
-#[rustler::nif]
-pub fn sanitize_csv_binary_nif<'a>(env: Env<'a>, input: Binary) -> Result<Binary<'a>, Error> {
-    sanitize_csv_binary(env, input)
-}
-
-/// Strip BOM from binary (UTF-8, UTF-16 LE/BE)
-fn strip_bom_binary<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
-    let bytes = strip_bom(input.as_slice());
-    Binary::from_slice(env, bytes)
-}
-
-/// Elixir strip BOM from binary (UTF-8, UTF-16 LE/BE)
-#[rustler::nif]
-pub fn strip_bom_binary_nif<'a>(env: Env<'a>, input: Binary) -> Binary<'a> {
-    strip_bom_binary(env, input)
-}
-
-/// Find problematic control bytes
-/// Note: Limited set checked currently
-fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
-    input.as_slice()
-        .iter()
-        .enumerate()
-        .filter(|(_, &b)| matches!(b, 0x00 | 0x01..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F))
-        .map(|(i, &b)| (i, b))
-        .take(100)
-        .collect()
-}
-
-/// Elixir find problematic control bytes
-#[rustler::nif]
-pub fn find_problematic_bytes_nif(input: Binary) -> Vec<(usize, u8)> {
-    find_problematic_bytes(input)
-}
-
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
-
-
-// ----------------------------------------------------------------------------
-// Binary Helpers
-// ----------------------------------------------------------------------------
-fn sanitize_bytes(bytes: &[u8]) -> Vec<u8> {
-    bytes.iter().copied()
-        .filter(|&b| matches!(b, 0x09 | 0x0A | 0x0D | 0x20..=0x7E) || b >= 0x80)
-        .collect()
-}
-
-fn strip_bom(bytes: &[u8]) -> &[u8] {
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { &bytes[3..] }
-    else if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) { &bytes[2..] }
-    else { bytes }
-}
-
-// Copy on write (COW) avoids unnecessary copy operations
-fn normalize_line_endings_cow(input: &str) -> Cow<str> {
-    if input.contains("\r") || input.contains("\n") {
-        Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n"))
-    } else {
-        Cow::Borrowed(input)
+        (normalized, encoding_name)
     }
 }
 
-/// Detect encoding by BOM or null byte patterns
-/// Notes:
-/// - Do this before removing BOM
-fn detect_encoding(input: Binary) -> String {
-    let bytes = input.as_slice();
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        "utf8_with_bom".to_string()
-    } else if bytes.starts_with(&[0xFF, 0xFE]) {
-        "utf16_le".to_string()
-    } else if bytes.starts_with(&[0xFE, 0xFF]) {
-        "utf16_be".to_string()
-    } else {
-        let null_count = bytes.iter().filter(|&&b| b == 0).count();
-        if null_count > bytes.len() / 4 {
-            "likely_utf16".to_string()
-        } else if bytes.iter().all(|&b| (b >= 0x20 && b <= 0x7E) || matches!(b, 0x09 | 0x0A | 0x0D) || b >= 0x80) {
-            "utf8".to_string()
-        } else {
-            "unknown".to_string()
-        }
-    }
-}
-
-/// Elixir detect encoding by BOM or null byte patterns before removing BOM
+// --- NIF Interface for Elixir ---
 #[rustler::nif]
-pub fn detect_encoding_nif(input: Binary) -> String {
-    detect_encoding(input)
+pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
+    // Initialize logging subscriber once if not already done
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let context = CsvContext {
+        raw_data: RwLock::new(input.as_slice().to_vec()),
+        processed_text: RwLock::new(String::new()),
+    };
+
+    info!(size = input.len(), "CSV Context Initialized");
+    Ok(ResourceArc::new(context))
 }
 
-/// Find problematic control bytes
-/// Notes:
-/// - [] TODO: Are there other problem bytes for Windows, Linux, and MacOS? Especially, on non Arch or Debian based systems.
-fn find_problematic_bytes(input: Binary) -> Vec<(usize, u8)> {
-    input.as_slice()
-        .iter()
-        .enumerate()
-        .filter(|(_, &b)| matches!(b, 0x00 | 0x01..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F))
-        .map(|(i, &b)| (i, b))
-        .take(100)
-        .collect()
-}
-
-/// Find problematic control bytes
 #[rustler::nif]
-pub fn find_problematic_bytes_nif(input: Binary) -> Vec<(usize, u8)> {
-    find_problematic_bytes(input)
+pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>) -> Result<Binary<'a>, Error> {
+    let raw_bytes = resource.raw_data.read().unwrap();
+    let original_size = raw_bytes.len();
+
+    let span = span!(Level::INFO, "repair_pipeline");
+    let _enter = span.enter();
+
+    let (normalized, enc) = CsvContext::universal_normalize(&raw_bytes);
+
+    let cleaned: String = normalized.chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect();
+
+    let final_bytes = cleaned.as_bytes();
+
+    info!(
+        original_encoding = enc,
+        bytes_before = original_size,
+        bytes_after = final_bytes.len(),
+        reduction_ratio = format!("{:.4}", final_bytes.len() as f64 / original_size as f64),
+        "Repair Complete"
+    );
+
+    let mut binary = OwnedBinary::new(final_bytes.len())
+        .ok_or(Error::RaiseTerm("Memory allocation error"))?;
+    binary.as_mut_slice().copy_from_slice(final_bytes);
+
+    Ok(Binary::from_owned(binary, env))
 }
 
-// ----------------------------------------------------------------------------
-// Tests
-// ----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // [x] TODO: update tests to work with new binary functions
-    // [] TODO: connect to elixir for functionality
     #[test]
-    fn test_remove_null_bytes() {
-        // Note: files should not have null bytes
-        let input = b"abc\0def\0".as_slice();
-        let cleaned = sanitize_bytes(input);
-        assert_eq!(cleaned, b"abcdef");
+    fn test_cross_platform_line_endings() {
+        // Resolve Windows line endings
+        let windows_data = b"id,name\r\n1,test\r\n";
+        let (normalized, _) = CsvContext::universal_normalize(windows_data);
+
+        // \r and \n should remain
+        assert!(!normalized.contains('\r'));
+        assert!(normalized.contains('\n'));
+        assert_eq!(normalized, "id,name\n1,test\n");
     }
 
     #[test]
-    fn test_strip_bom() {
-        // Windows and other systems can add byte order marks (BOM) to denote encoding
-        let utf8_bom = &[0xEF, 0xBB, 0xBF, b'a', b'b', b'c'];
-        let stripped = strip_bom(utf8_bom);
-        assert_eq!(stripped, b"abc");
+    fn test_noise_cancellation() {
+        let dirty_data = "name\t\u{0000}age".as_bytes();
+        let (normalized, _) = CsvContext::universal_normalize(dirty_data);
 
-        let no_bom = &[b'a', b'b', b'c'];
-        let stripped2 = strip_bom(no_bom);
-        assert_eq!(stripped2, b"abc");
+        let cleaned: String = normalized.chars()
+            .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+            .collect();
+
+        assert!(cleaned.contains('\t'));
+        assert!(!cleaned.contains('\u{0000}'));
     }
 
     #[test]
-    fn test_normalize_line_endings() {
-        // different systems use different line endings
-        let input = "line1\rline2\nline3\r\nline4";
-        let normalized = normalize_line_endings_cow(input);
-        assert_eq!(&normalized, "line1\r\nline2\r\nline3\r\nline4");
+    fn test_encoding() {
+        // Remove null byte
+        let dirty_data = "name\t\u{0000}age".as_bytes();
+        let (normalized, encoding) = CsvContext::universal_normalize(dirty_data);
+        assert_eq!(encoding, "UTF-8");
     }
-
-    #[test]
-    fn test_sanitize_csv_binary() {
-        let input = b"abc\x00\x01def\t\n\r".as_slice();
-        let cleaned = sanitize_bytes(input);
-        assert_eq!(cleaned, b"abcdef\t\n\r");
-    }
-
-    #[test]
-    fn test_check_csv_injection() {
-        let eq = b"=SUM(A1:A2)";
-        assert!(check_csv_injection(Binary::from_slice(rustler::Env::new(), eq)));
-    }
-
-    // #[test]
-    // fn test_remove_null_bytes() {
-    //     assert_eq!(remove_null_bytes("hi\0, no \0nulls".to_string()), "hi, no nulls");
-    //     assert_eq!(remove_null_bytes("never had nulls".to_string()), "never had nulls");
-    // }
-
-    // #[test]
-    // fn test_keep_normal_ascii_characters() {
-    //     // This should now keep all characters expected.
-    //     let input = "This is a test. Normal ASCII.";
-    //     let output = sanitize_csv_string(input.to_string());
-    //     assert_eq!(output, "This is a test. Normal ASCII.");
-    // }
-
-    // #[test]
-    // fn test_remove_control_characters_except_tab_newline_cr() {
-    //     let input = "Hi\x00\tThere\n\x07CR\r";
-    //     let output = sanitize_csv_string(input.to_string());
-    //     assert_eq!(output, "Hi\tThere\nCR\r");
-    // }
-
-    // #[test]
-    // fn test_keep_utf8_characters() {
-    //     let input = "Café 漢字 Привет"; // Should not be removed
-    //     let output = sanitize_csv_string(input.to_string());
-    // }
-
-    // #[test]
-    // fn removes_del_character() {
-    //     let input = format!("Hello{}World", 0x7Fu8 as char);
-    //     let output = sanitize_csv_string(input);
-    //     assert_eq!(output, "HelloWorld");
-    // }
-
-    // #[test]
-    // fn keeps_tabs_newlines_and_carriage_returns() {
-    //     let input = "a\tb\nc\rd";
-    //     let output = sanitize_csv_string(input.to_string());
-    //     assert_eq!(output, "a\tb\nc\rd");
-    // }
-
-    // #[test]
-    // fn removes_all_other_controls() {
-    //     // Control Char Ranges = 0x01–0x08, 0x0B–0x0C, 0x0E–0x1F
-    //     let bad_chars: String = (1u8..=31)
-    //         .filter(|&b| !matches!(b, b'\t' | b'\n' | b'\r'))
-    //         .map(|b| b as char)
-    //         .collect();
-    //     let input = format!("Good{}Bad", bad_chars);
-    //     let output = sanitize_csv_string(input);
-    //     assert_eq!(output, "GoodBad");
-    // }
 }
 
-
+// --- Send to Elixir ---
 rustler::init!("Elixir.Orchestrate");
