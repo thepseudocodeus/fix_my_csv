@@ -56,17 +56,45 @@ pub struct CsvContext {
     pub raw_data: RwLock<Vec<u8>>,
 }
 
-pub fn perform_universal_normalization(bytes: &[u8]) -> (String, String) {
+pub fn perform_normalization(bytes: &[u8]) -> (String, String) {
     let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
     let encoding_name = encoding.name().to_string();
     let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
     (normalized, encoding_name)
 }
 
-pub fn perform_noise_cleanup(text: &str) -> String {
+pub fn perform_sanitization(text: &str) -> String {
     text.chars()
         .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
         .collect()
+}
+
+pub fn heal_binary_manifold(bytes: &[u8]) -> (String, String) {
+    // Workflow:
+    // 1. Strip BOM & transcode
+    // 2. Normalize line endings
+    // 3. Sanitize bytes
+
+    // 1. Strip and transcode
+    // let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
+    // let encoding_name = encoding.name().to_string();
+
+    // 2. Normalize
+    // - Force all \r\n (Windows) and \r (Old Mac) to \n (Unix)
+    // let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
+
+    let (normalized, encoding_name) = perform_normalization(bytes);
+
+    // 3.Sanitize
+    // - Remove Null bytes (\0) and invisible control characters that break Excel, Git, etc
+    // let cleaned: String = normalized.chars()
+    //     .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+    //     .collect();
+
+    let cleaned = perform_sanitization(&normalized);
+
+    // Return cleaned data and name of encoding
+    (cleaned, encoding_name)
 }
 
 // --- NIF Interface ---
@@ -74,11 +102,9 @@ pub fn perform_noise_cleanup(text: &str) -> String {
 #[rustler::nif]
 pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
     let _ = tracing_subscriber::fmt::try_init();
-
     let context = CsvContext {
         raw_data: RwLock::new(input.as_slice().to_vec()),
     };
-
     info!(size = input.len(), "CSV Context Initialized");
     Ok(ResourceArc::new(context))
 }
@@ -91,24 +117,64 @@ pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>)
     let span = span!(Level::INFO, "repair_pipeline");
     let _enter = span.enter();
 
-    let (normalized, enc) = perform_universal_normalization(&raw_bytes);
-    let cleaned = perform_noise_cleanup(&normalized);
-    let final_bytes = cleaned.as_bytes();
+    // Perform all repair operations
+    let (cleaned_text, original_enc) = heal_binary_manifold(&raw_bytes);
+    let final_bytes = cleaned_text.as_bytes();
 
+    // Log data
     info!(
-        original_encoding = enc,
+        original_encoding = original_enc,
         bytes_before = original_size,
         bytes_after = final_bytes.len(),
-        "Repair Complete"
+        reduction_ratio = format!("{:.4}", final_bytes.len() as f64 / original_size as f64),
+        "Healing Complete"
     );
 
     let mut binary = OwnedBinary::new(final_bytes.len())
         .ok_or(Error::RaiseTerm(Box::new("Memory allocation error")))?;
 
     binary.as_mut_slice().copy_from_slice(final_bytes);
-
     Ok(Binary::from_owned(binary, env))
 }
+
+// #[rustler::nif]
+// pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
+//     let _ = tracing_subscriber::fmt::try_init();
+
+//     let context = CsvContext {
+//         raw_data: RwLock::new(input.as_slice().to_vec()),
+//     };
+
+//     info!(size = input.len(), "CSV Context Initialized");
+//     Ok(ResourceArc::new(context))
+// }
+
+// #[rustler::nif]
+// pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>) -> Result<Binary<'a>, Error> {
+//     let raw_bytes = resource.raw_data.read().unwrap();
+//     let original_size = raw_bytes.len();
+
+//     let span = span!(Level::INFO, "repair_pipeline");
+//     let _enter = span.enter();
+
+//     let (normalized, enc) = perform_normalization(&raw_bytes);
+//     let cleaned = perform_noise_cleanup(&normalized);
+//     let final_bytes = cleaned.as_bytes();
+
+//     info!(
+//         original_encoding = enc,
+//         bytes_before = original_size,
+//         bytes_after = final_bytes.len(),
+//         "Repair Complete"
+//     );
+
+//     let mut binary = OwnedBinary::new(final_bytes.len())
+//         .ok_or(Error::RaiseTerm(Box::new("Memory allocation error")))?;
+
+//     binary.as_mut_slice().copy_from_slice(final_bytes);
+
+//     Ok(Binary::from_owned(binary, env))
+// }
 
 // Allow in elixir
 fn on_load(env: Env, _info: rustler::Term) -> bool {
@@ -123,7 +189,7 @@ mod tests {
     #[test]
     fn test_cross_platform_line_endings() {
         let windows_data = b"id,name\r\n1,test\r\n";
-        let (normalized, _) = perform_universal_normalization(windows_data);
+        let (normalized, _) = perform_normalization(windows_data);
         assert!(!normalized.contains('\r'));
         assert_eq!(normalized, "id,name\n1,test\n");
     }
