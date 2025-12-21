@@ -85,4 +85,16 @@ defmodule OrchestrateTest do
     result = Orchestrate.clean_csv(input)
     assert result == "helloworld"
   end
+
+  test "normalizes field spacing" do
+    input = "id,  name  ,status\n1,  John   Doe  ,  active  \n"
+    result = Orchestrate.clean_csv_complete(input)
+    assert result == "id,name,status\n1,John Doe,active\n"
+  end
+
+  test "reduces multiple spaces to single space" do
+    input = "col1,col2\nvalue    with    spaces,normal\n"
+    result = Orchestrate.clean_csv_complete(input)
+    assert result == "col1,col2\nvalue with spaces,normal\n"
+  end
 end

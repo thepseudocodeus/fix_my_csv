@@ -7,8 +7,7 @@ defmodule Orchestrate do
     otp_app: :orchestrate,
     crate: "nif_actions",
     path: "../execute/nif_actions",
-    mode: (if Mix.env() == :prod, do: :release, else: :debug)
-
+    mode: if(Mix.env() == :prod, do: :release, else: :debug)
 
   # --- NIF Functions ---
 
@@ -51,13 +50,14 @@ defmodule Orchestrate do
     with {:ok, dirty_data} <- File.read(input_path),
          cleaned_data <- clean_csv(dirty_data),
          :ok <- File.write(output_path, cleaned_data) do
-      {:ok, %{
-        input: input_path,
-        output: output_path,
-        original_size: byte_size(dirty_data),
-        cleaned_size: byte_size(cleaned_data),
-        bytes_removed: byte_size(dirty_data) - byte_size(cleaned_data)
-      }}
+      {:ok,
+       %{
+         input: input_path,
+         output: output_path,
+         original_size: byte_size(dirty_data),
+         cleaned_size: byte_size(cleaned_data),
+         bytes_removed: byte_size(dirty_data) - byte_size(cleaned_data)
+       }}
     else
       {:error, reason} -> {:error, reason}
     end
@@ -78,7 +78,7 @@ defmodule Orchestrate do
     |> Kernel.<>(Path.extname(input_path))
   end
 
-@doc """
+  @doc """
   Runs CSV repair pipeline
   """
   def clean_csv_complete(binary) when is_binary(binary) do
@@ -119,5 +119,4 @@ defmodule Orchestrate do
   defp format_csv_row(fields) do
     Enum.join(fields, ",")
   end
-
 end
