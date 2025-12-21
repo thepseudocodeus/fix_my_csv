@@ -1,9 +1,14 @@
 #!/usr/bin/env elixir
 
-files = Path.wildcard("test_data/*.csv")
+# File.cd!("orchestrate")
+Code.require_file("lib/orchestrate.ex")
+
+# Find CSV files
+files = Path.wildcard("../test_csvs/*.csv")
 
 IO.puts("🔍 Found #{length(files)} CSV files\n")
 
+# Clean each file
 Enum.each(files, fn file ->
   IO.write("Cleaning #{Path.basename(file)}... ")
 

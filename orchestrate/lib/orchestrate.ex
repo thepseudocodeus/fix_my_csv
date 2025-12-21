@@ -77,4 +77,47 @@ defmodule Orchestrate do
     |> Kernel.<>("_cleaned")
     |> Kernel.<>(Path.extname(input_path))
   end
+
+@doc """
+  Runs CSV repair pipeline
+  """
+  def clean_csv_complete(binary) when is_binary(binary) do
+    binary
+    |> clean_csv()
+    |> normalize_csv_data()
+  end
+
+  @doc """
+  After binary repair handles trimming, normalizing, etc
+  """
+  def normalize_csv_data(csv_string) do
+    csv_string
+    |> String.split("\n", trim: true)
+    |> Enum.map(&normalize_csv_row/1)
+    |> Enum.join("\n")
+  end
+
+  defp normalize_csv_row(row) do
+    parse_csv_row(row)
+    |> Enum.map(&normalize_field/1)
+    |> format_csv_row()
+  end
+
+  defp normalize_field(field) do
+    field
+    |> String.trim()
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+
+  # [] TODO: Replace with NimbleCSV here or CSV in python
+  defp parse_csv_row(row) do
+    String.split(row, ",")
+    |> Enum.map(&String.trim/1)
+  end
+
+  defp format_csv_row(fields) do
+    Enum.join(fields, ",")
+  end
+
 end
