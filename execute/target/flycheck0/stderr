@@ -1,1 +1,1 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+error: manifest path `/home/pseudocodeus/Code/fix_my_csv/execute` contains no package: The manifest is virtual, and the workspace has no members.

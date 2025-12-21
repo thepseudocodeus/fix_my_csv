@@ -14,6 +14,10 @@
 /// 2. From Data
 /// 3. From Structure
 ///
+/// Revised Approach (12/19/2025):
+/// - If file is recoded to UTF-8, ~80% of data problems can be solved.
+/// - Then, only need to normalize line endings and other items.
+///
 /// BINARY
 /// 1. Strip BOM
 /// 2. Santize bytes
@@ -42,73 +46,75 @@
 ///       - Use a single higher order function and log each step in Rust
 ///       - Simplifies Elixir orchestration
 ///       - Establishes orchestration methodology = each layer is responsible for logging its own steps
+// src/lib.rs
+
 use rustler::{Env, Error, Binary, OwnedBinary, ResourceArc};
 use encoding_rs::UTF_8;
 use std::sync::RwLock;
-use tracing::{info, warn, span, Level};
+use tracing::{info, span, Level};
 
 // --- State ---
+#[derive(rustler::Resource)]
 pub struct CsvContext {
     pub raw_data: RwLock<Vec<u8>>,
-    pub processed_text: RwLock<String>,
 }
 
-// --- Cross Platform Interop ---
-impl CsvContext {
-    /// Normalizes across Windows, Mac, and Linux to UTF-8 and Unix Line Endings (\n)
-    fn universal_normalize(bytes: &[u8]) -> (String, String) {
-        // Transcode to UTF-8
-        let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
-        let encoding_name = encoding.name().to_string();
-
-        // Normalize Line Endings to '\n (Unix)
-        let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
-
-        (normalized, encoding_name)
-    }
+// Extract operating functions to allow testing
+/// Convert to UTF-8
+pub fn perform_universal_normalization(bytes: &[u8]) -> (String, String) {
+    let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
+    let encoding_name = encoding.name().to_string();
+    let normalized = cow.replace("\r\n", "\n").replace("\r", "\n");
+    (normalized, encoding_name)
 }
 
-// --- NIF Interface for Elixir ---
+/// Remove control characters
+pub fn perform_noise_cleanup(text: &str) -> String {
+    text.chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect()
+}
+
+// --- Elixir Interface ---
+
+/// Initialize context
 #[rustler::nif]
-pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
-    // Initialize logging subscriber once if not already done
+pub fn init_context<'a>(_env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let context = CsvContext {
         raw_data: RwLock::new(input.as_slice().to_vec()),
-        processed_text: RwLock::new(String::new()),
     };
 
     info!(size = input.len(), "CSV Context Initialized");
     Ok(ResourceArc::new(context))
 }
 
+/// Repair and Normalize file data
 #[rustler::nif]
 pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>) -> Result<Binary<'a>, Error> {
+    // Use .read().unwrap() to access the data inside the RwLock
     let raw_bytes = resource.raw_data.read().unwrap();
     let original_size = raw_bytes.len();
 
     let span = span!(Level::INFO, "repair_pipeline");
     let _enter = span.enter();
 
-    let (normalized, enc) = CsvContext::universal_normalize(&raw_bytes);
-
-    let cleaned: String = normalized.chars()
-        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
-        .collect();
-
+    let (normalized, enc) = perform_universal_normalization(&raw_bytes);
+    let cleaned = perform_noise_cleanup(&normalized);
     let final_bytes = cleaned.as_bytes();
 
     info!(
         original_encoding = enc,
         bytes_before = original_size,
         bytes_after = final_bytes.len(),
-        reduction_ratio = format!("{:.4}", final_bytes.len() as f64 / original_size as f64),
         "Repair Complete"
     );
 
     let mut binary = OwnedBinary::new(final_bytes.len())
-        .ok_or(Error::RaiseTerm("Memory allocation error"))?;
+        // Rustler 0.30+ requires Error strings to be Boxed when using RaiseTerm
+        .ok_or(Error::RaiseTerm(Box::new("Memory allocation error")))?;
+
     binary.as_mut_slice().copy_from_slice(final_bytes);
 
     Ok(Binary::from_owned(binary, env))
@@ -120,37 +126,28 @@ mod tests {
 
     #[test]
     fn test_cross_platform_line_endings() {
-        // Resolve Windows line endings
         let windows_data = b"id,name\r\n1,test\r\n";
-        let (normalized, _) = CsvContext::universal_normalize(windows_data);
-
-        // \r and \n should remain
-        assert!(!normalized.contains('\r'));
-        assert!(normalized.contains('\n'));
+        let (normalized, _) = perform_universal_normalization(windows_data);
+        assert!(!normalized.contains('\r'), "Should remove carriage returns");
         assert_eq!(normalized, "id,name\n1,test\n");
     }
 
     #[test]
     fn test_noise_cancellation() {
-        let dirty_data = "name\t\u{0000}age".as_bytes();
-        let (normalized, _) = CsvContext::universal_normalize(dirty_data);
-
-        let cleaned: String = normalized.chars()
-            .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
-            .collect();
-
-        assert!(cleaned.contains('\t'));
-        assert!(!cleaned.contains('\u{0000}'));
+        let dirty_text = "name\t\u{0000}age";
+        let cleaned = perform_noise_cleanup(dirty_text);
+        assert!(cleaned.contains('\t'), "Should preserve tabs");
+        assert!(!cleaned.contains('\u{0000}'), "Should remove null bytes");
     }
 
     #[test]
-    fn test_encoding() {
-        // Remove null byte
-        let dirty_data = "name\t\u{0000}age".as_bytes();
-        let (normalized, encoding) = CsvContext::universal_normalize(dirty_data);
-        assert_eq!(encoding, "UTF-8");
+    fn test_idempotency() {
+        // Once clean should remain so
+        let first_pass = perform_noise_cleanup("clean_text");
+        let second_pass = perform_noise_cleanup(&first_pass);
+        assert_eq!(first_pass, second_pass);
     }
 }
 
-// --- Send to Elixir ---
+// Ensure matches Elixir Module
 rustler::init!("Elixir.Orchestrate");
