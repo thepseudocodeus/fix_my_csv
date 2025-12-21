@@ -1,199 +1,133 @@
 /// NIF Action library
 ///
-/// version: 0.0.4
-/// date: 12-19-2025
+/// version: 0.1.0
+/// date: 12-20-2025
 /// Author: AJ Igherighe | The PseudoCodeus
 /// license: GNU AGPL v3.0
 ///
-/// Rust NIF functions implement algorithms to transform input into output for Elixir to orchestration layer.
-/// NIF functions wrap internal functions that directly execute transformations. This allows Rust code to be tested in Rust.
-///
-/// Workflow:
-/// Phases:
-/// 1. From Binary
-/// 2. From Data
-/// 3. From Structure
-///
-/// Revised Approach (12/19/2025):
-/// - If file is recoded to UTF-8, ~80% of data problems can be solved.
-/// - Then, only need to normalize line endings and other items.
-///
-/// BINARY
-/// 1. Strip BOM
-/// 2. Santize bytes
-/// 3. Convert to UTF-8
-/// 4. Normalize file endings
-/// 5. Return repaired binary
-///
-/// Notes:
-/// - Should each be orchestrated individually or export a single higher order function?
-///     - Individual approach:
-///         - Pro:
-///             - Can be tested individually
-///             - More efficient
-///             - More data at orchestration
-///         - Con:
-///             - Harder to orchestrate
-///             - Less efficient
-///             - More code
-///     - Single higher order function:
-///         - Pro:
-///             - More efficient
-///             - Less code
-///         - Con:
-///             - Less data at orchestration
-///     - Conclusion:
-///       - Use a single higher order function and log each step in Rust
-///       - Simplifies Elixir orchestration
-///       - Establishes orchestration methodology = each layer is responsible for logging its own steps
-use rustler::{Env, Error, Binary, OwnedBinary, ResourceArc, Encoder};
-use encoding_rs::UTF_8;
-use std::sync::RwLock;
+/// Provides CSV data cleaning and normalization via Rust NIFs.
+/// Handles encoding conversion, line ending normalization, and control character sanitization.
+
+use rustler::{Env, Error, Binary, OwnedBinary};
 use tracing::{info, span, Level};
 
-// --- State ---
-pub struct CsvContext {
-    pub raw_data: RwLock<Vec<u8>>,
-}
+// --- Core Transformation Functions ---
 
-pub fn perform_normalization(bytes: &[u8]) -> (String, String) {
+/// Strips BOM and transcodes to UTF-8, normalizing line endings
+fn normalize_encoding_and_line_endings(bytes: &[u8]) -> (String, String) {
     let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
     let encoding_name = encoding.name().to_string();
-    let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
+
+    // Normalize all line endings to Unix-style \n
+    let normalized = cow
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+
     (normalized, encoding_name)
 }
 
-pub fn perform_sanitization(text: &str) -> String {
+/// Removes null bytes and control characters (preserving \n and \t)
+fn sanitize_control_chars(text: &str) -> String {
     text.chars()
         .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
         .collect()
 }
 
-pub fn heal_binary_manifold(bytes: &[u8]) -> (String, String) {
-    // Workflow:
-    // 1. Strip BOM & transcode
-    // 2. Normalize line endings
-    // 3. Sanitize bytes
-
-    // 1. Strip and transcode
-    // let (cow, encoding, _had_errors) = encoding_rs::UTF_8.decode(bytes);
-    // let encoding_name = encoding.name().to_string();
-
-    // 2. Normalize
-    // - Force all \r\n (Windows) and \r (Old Mac) to \n (Unix)
-    // let normalized = cow.replace("\r\n", "\n").replace('\r', "\n");
-
-    let (normalized, encoding_name) = perform_normalization(bytes);
-
-    // 3.Sanitize
-    // - Remove Null bytes (\0) and invisible control characters that break Excel, Git, etc
-    // let cleaned: String = normalized.chars()
-    //     .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
-    //     .collect();
-
-    let cleaned = perform_sanitization(&normalized);
-
-    // Return cleaned data and name of encoding
-    (cleaned, encoding_name)
+/// Main transformation pipeline
+fn repair_csv_binary(bytes: &[u8]) -> (String, String) {
+    let (normalized, encoding_name) = normalize_encoding_and_line_endings(bytes);
+    let sanitized = sanitize_control_chars(&normalized);
+    (sanitized, encoding_name)
 }
 
 // --- NIF Interface ---
 
 #[rustler::nif]
-pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
+pub fn repair_and_normalize<'a>(
+    env: Env<'a>,
+    input: Binary
+) -> Result<Binary<'a>, Error> {
     let _ = tracing_subscriber::fmt::try_init();
-    let context = CsvContext {
-        raw_data: RwLock::new(input.as_slice().to_vec()),
-    };
-    info!(size = input.len(), "CSV Context Initialized");
-    Ok(ResourceArc::new(context))
-}
 
-#[rustler::nif]
-pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>) -> Result<Binary<'a>, Error> {
-    let raw_bytes = resource.raw_data.read().unwrap();
-    let original_size = raw_bytes.len();
-
-    let span = span!(Level::INFO, "repair_pipeline");
+    let span = span!(Level::INFO, "csv_repair");
     let _enter = span.enter();
 
-    // Perform all repair operations
-    let (cleaned_text, original_enc) = heal_binary_manifold(&raw_bytes);
+    let original_size = input.len();
+    let (cleaned_text, detected_encoding) = repair_csv_binary(input.as_slice());
     let final_bytes = cleaned_text.as_bytes();
 
-    // Log data
     info!(
-        original_encoding = original_enc,
+        original_encoding = detected_encoding,
         bytes_before = original_size,
         bytes_after = final_bytes.len(),
         reduction_ratio = format!("{:.4}", final_bytes.len() as f64 / original_size as f64),
-        "Healing Complete"
+        "CSV repair complete"
     );
 
     let mut binary = OwnedBinary::new(final_bytes.len())
-        .ok_or(Error::RaiseTerm(Box::new("Memory allocation error")))?;
+        .ok_or_else(|| Error::RaiseTerm(Box::new("Memory allocation failed")))?;
 
     binary.as_mut_slice().copy_from_slice(final_bytes);
     Ok(Binary::from_owned(binary, env))
 }
 
-// #[rustler::nif]
-// pub fn init_context<'a>(env: Env<'a>, input: Binary) -> Result<ResourceArc<CsvContext>, Error> {
-//     let _ = tracing_subscriber::fmt::try_init();
+// Send to Elixir
+rustler::init!("Elixir.Orchestrate");
 
-//     let context = CsvContext {
-//         raw_data: RwLock::new(input.as_slice().to_vec()),
-//     };
-
-//     info!(size = input.len(), "CSV Context Initialized");
-//     Ok(ResourceArc::new(context))
-// }
-
-// #[rustler::nif]
-// pub fn repair_and_normalize<'a>(env: Env<'a>, resource: ResourceArc<CsvContext>) -> Result<Binary<'a>, Error> {
-//     let raw_bytes = resource.raw_data.read().unwrap();
-//     let original_size = raw_bytes.len();
-
-//     let span = span!(Level::INFO, "repair_pipeline");
-//     let _enter = span.enter();
-
-//     let (normalized, enc) = perform_normalization(&raw_bytes);
-//     let cleaned = perform_noise_cleanup(&normalized);
-//     let final_bytes = cleaned.as_bytes();
-
-//     info!(
-//         original_encoding = enc,
-//         bytes_before = original_size,
-//         bytes_after = final_bytes.len(),
-//         "Repair Complete"
-//     );
-
-//     let mut binary = OwnedBinary::new(final_bytes.len())
-//         .ok_or(Error::RaiseTerm(Box::new("Memory allocation error")))?;
-
-//     binary.as_mut_slice().copy_from_slice(final_bytes);
-
-//     Ok(Binary::from_owned(binary, env))
-// }
-
-// Allow in elixir
-fn on_load(env: Env, _info: rustler::Term) -> bool {
-    rustler::resource!(CsvContext, env);
-    true
-}
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_cross_platform_line_endings() {
-        let windows_data = b"id,name\r\n1,test\r\n";
-        let (normalized, _) = perform_normalization(windows_data);
-        assert!(!normalized.contains('\r'));
-        assert_eq!(normalized, "id,name\n1,test\n");
+    fn test_windows_line_endings() {
+        let input = b"id,name\r\n1,test\r\n";
+        let (result, _) = repair_csv_binary(input);
+        assert_eq!(result, "id,name\n1,test\n");
+        assert!(!result.contains('\r'));
+    }
+
+    #[test]
+    fn test_old_mac_line_endings() {
+        let input = b"id,name\r1,test\r";
+        let (result, _) = repair_csv_binary(input);
+        assert_eq!(result, "id,name\n1,test\n");
+    }
+
+    #[test]
+    fn test_removes_null_bytes() {
+        let input = b"hello\0world";
+        let (result, _) = repair_csv_binary(input);
+        assert_eq!(result, "helloworld");
+    }
+
+    #[test]
+    fn test_preserves_tabs_and_newlines() {
+        let input = b"col1\tcol2\nval1\tval2\n";
+        let (result, _) = repair_csv_binary(input);
+        assert_eq!(result, "col1\tcol2\nval1\tval2\n");
+    }
+
+
+    #[test]
+    fn test_empty_input() {
+        let (result, _) = repair_csv_binary(b"");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_utf8_detection() {
+        let input = "héllo,wörld\n".as_bytes();
+        let (result, encoding) = repair_csv_binary(input);
+        assert_eq!(encoding, "UTF-8");
+        assert_eq!(result, "héllo,wörld\n");
+    }
+
+    #[test]
+    fn test_removes_control_characters() {
+        let input = b"hello\x01\x02world";
+        let (result, _) = repair_csv_binary(input);
+        assert_eq!(result, "helloworld");
     }
 }
-
-// Send to Elixir
-rustler::init!("Elixir.Orchestrate");
