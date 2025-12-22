@@ -1,6 +1,6 @@
 # https://taskfile.dev
 
-version: '3'
+version: "3"
 
 vars:
   MSG: Default Commit Message
@@ -51,7 +51,7 @@ tasks:
     cmds:
       - cd execute && cargo test
 
-# [] TODO: consider using scripts to simplify other commands
+  # [] TODO: consider using scripts to simplify other commands
   git:
     desc: Run git python script
     cmds:
@@ -61,3 +61,9 @@ tasks:
     desc: Run elixir csv example
     cmds:
       - cd orchestrate && mix deps.get && mix compile
+
+  archive:
+    desc: Backup using tar & zst
+    cmds:
+      - echo "Archiving directories"
+      - git-lfs track "*.zst"

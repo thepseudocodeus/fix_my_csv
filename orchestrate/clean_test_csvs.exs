@@ -32,6 +32,7 @@ if Enum.dir?(directory) do
       # Handle cases
       Path.extname(file) |> String.downcase() == ".csv"
     end)
+    |> Enum.reject()
 else
   IO.puts("error: Directory '#{directory}' does not exist")
   System.halt(1)
