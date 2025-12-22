@@ -10,6 +10,8 @@ defmodule Orchestrate do
     path: "../execute/nif_actions",
     mode: if(Mix.env() == :prod, do: :release, else: :debug)
 
+  NimbleCSV.define(MyParser, separator: ",", escape: "'")
+
   # --- NIF Functions ---
 
   @doc false
@@ -85,7 +87,19 @@ defmodule Orchestrate do
   def clean_csv_complete(binary) when is_binary(binary) do
     binary
     |> clean_csv()
+    # Deal with ''quote'' problem
+    |> fix_malformed_quotes()
     |> normalize_csv_data()
+  end
+
+  @doc """
+  Fixes a double-single quote issue.
+
+  Example:
+   - Converts ''text'' to "text".
+  """
+  def fix_malformed_quotes(binary) do
+    String.replace(binary, "''", "\"")
   end
 
   @doc """
@@ -93,9 +107,12 @@ defmodule Orchestrate do
   """
   def normalize_csv_data(csv_string) do
     csv_string
-    |> String.split("\n", trim: true)
-    |> Enum.map(&normalize_csv_row/1)
-    |> Enum.join("\n")
+    |> MyParser.parse_string(skip_headers: false)
+    |> Enum.map(fn row ->
+      row
+      |> Enum.map(&normalize_csv_row/1)
+    end)
+    |> MyParser.dump_to_binary()
   end
 
   defp normalize_csv_row(row) do
@@ -111,7 +128,7 @@ defmodule Orchestrate do
     |> String.trim()
   end
 
-  # [] TODO: Replace with NimbleCSV here or CSV in python
+  # [x] TODO: Replace with NimbleCSV here or CSV in python
   defp parse_csv_row(row) do
     String.split(row, ",")
     |> Enum.map(&String.trim/1)

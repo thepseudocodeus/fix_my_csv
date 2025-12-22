@@ -56,3 +56,8 @@ tasks:
     desc: Run git python script
     cmds:
       - uv run python3 -m auto.git
+
+  run-csv:
+    desc: Run elixir csv example
+    cmds:
+      - cd orchestrate && mix deps.get && mix compile
