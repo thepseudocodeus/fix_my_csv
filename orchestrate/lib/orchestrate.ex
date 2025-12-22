@@ -2,6 +2,7 @@ defmodule Orchestrate do
   @moduledoc """
   CSV data cleaning and normalization via Rust NIFs.
   """
+
   # [] TODO: Fix tests
 
   use Rustler,
@@ -51,7 +52,7 @@ defmodule Orchestrate do
     output_path = output_path || default_output_path(input_path)
 
     with {:ok, dirty_data} <- File.read(input_path),
-         cleaned_data <- clean_csv(dirty_data),
+         cleaned_data <- clean_csv_complete(dirty_data),
          :ok <- File.write(output_path, cleaned_data) do
       {:ok,
        %{
@@ -112,7 +113,9 @@ defmodule Orchestrate do
       row
       |> Enum.map(&normalize_csv_row/1)
     end)
-    |> MyParser.dump_to_binary()
+    # Switched from .dump_to_binary()
+    |> MyParser.dump_to_iodata()
+    |> IO.iodata_to_binary()
   end
 
   defp normalize_csv_row(row) do

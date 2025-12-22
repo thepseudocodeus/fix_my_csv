@@ -1,10 +1,41 @@
 #!/usr/bin/env elixir
 
+# Require dependents
+Application.ensure_all_started(:orchestrate)
+
 # File.cd!("orchestrate")
-Code.require_file("lib/orchestrate.ex")
+# Code.require_file("lib/orchestrate.ex")
+
+input_path =
+  IO.gets("📂 Enter the csv directory (or press Enter for current): ")
+  |> String.trim()
+
+directory =
+  if input_path == "" do
+    File.cwd!()
+  else
+    Path.expand(input_path)
+  end
 
 # Find CSV files
-files = Path.wildcard("../test_csvs/*.csv")
+# files = Path.wildcard("../test_csvs/*.csv")
+
+# If exist, proceed
+if Enum.dir?(directory) do
+  # Create list of all csv files
+  files =
+    directory
+    # look in subdirectories
+    |> Path.join("**/*.csv")
+    |> Path.wildcard()
+    |> Enum.filter(fn file ->
+      # Handle cases
+      Path.extname(file) |> String.downcase() == ".csv"
+    end)
+else
+  IO.puts("error: Directory '#{directory}' does not exist")
+  System.halt(1)
+end
 
 IO.puts("🔍 Found #{length(files)} CSV files\n")
 
