@@ -67,3 +67,8 @@ tasks:
     cmds:
       - echo "Archiving directories"
       - git-lfs track "*.zst"
+
+  profile-csv:
+    desc: Profile csv files
+    cmds:
+      - uv run python3 -m scripts.profiling.profiler
