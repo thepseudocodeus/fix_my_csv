@@ -2,7 +2,7 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import logging
 
-from git.git import GitModule
+from git import GitModule
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Menu")

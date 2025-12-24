@@ -55,7 +55,7 @@ tasks:
   git:
     desc: Run git python script
     cmds:
-      - uv run python3 -m scripts.git.git
+      - uv run python3 -m src.git.git
 
   run-csv:
     desc: Run elixir csv example
@@ -72,3 +72,8 @@ tasks:
     desc: Profile csv files
     cmds:
       - uv run python3 -m scripts.profiling.profiler
+
+  run:
+    desc: Run src app
+    cmds:
+      - uv run python3 -m src.menu
