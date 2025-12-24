@@ -2,19 +2,20 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import logging
 
-from git import GitModule
+from .git_tools.git import GitModule
+from .csv_tools.profiler import CSVProfilerModule
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Menu")
 
 
 def main():
-    modules = [GitModule()]
+    modules = [GitModule(), CSVProfilerModule()]
 
     while True:
         module = inquirer.select(
             message="Select Module:",
-            choices=[Choice(m, m.name) for m in modules] + [Choice(None, "Exit")]
+            choices=[Choice(m, m.name) for m in modules] + [Choice(None, "Exit")],
         ).execute()
 
         if not module:
@@ -24,9 +25,8 @@ def main():
         while True:
             action = inquirer.select(
                 message=f"{module.name} - Select Action:",
-                choices=[
-                    Choice(item, item.label) for item in module.items()
-                ] + [Choice(None, "← Back")]
+                choices=[Choice(item, item.label) for item in module.items()]
+                + [Choice(None, "← Back")],
             ).execute()
 
             if not action:

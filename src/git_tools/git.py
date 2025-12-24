@@ -45,10 +45,7 @@ class GitService:
     @staticmethod
     def push_to():
         """Push changes to remote."""
-        branch = inquirer.text(
-            message="Branch name:",
-            default="main"
-        ).execute()
+        branch = inquirer.text(message="Branch name:", default="main").execute()
         msg = inquirer.text(message="Commit message:").execute()
 
         if branch:
@@ -76,29 +73,13 @@ class GitModule(MenuModule):
 
     def items(self) -> List[MenuItem]:
         return [
-            MenuItem(
-                id="status",
-                label="Check Status",
-                handler=GitService.status
-            ),
-            MenuItem(
-                id="ls",
-                label="List Branches",
-                handler=GitService.list_branches
-            ),
+            MenuItem(id="status", label="Check Status", handler=GitService.status),
+            MenuItem(id="ls", label="List Branches", handler=GitService.list_branches),
             MenuItem(
                 id="lsa",
                 label="List All Branches",
-                handler=GitService.list_all_branches
+                handler=GitService.list_all_branches,
             ),
-            MenuItem(
-                id="swb",
-                label="Switch Branch",
-                handler=GitService.switch_branch
-            ),
-            MenuItem(
-                id="push",
-                label="Push to Repo",
-                handler=GitService.push_to
-            ),
+            MenuItem(id="swb", label="Switch Branch", handler=GitService.switch_branch),
+            MenuItem(id="push", label="Push to Repo", handler=GitService.push_to),
         ]
