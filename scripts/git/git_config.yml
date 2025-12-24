@@ -1,0 +1,4 @@
+git:
+  default_branch: main
+  auto_push: false
+  protected_branches: [main, master, production]

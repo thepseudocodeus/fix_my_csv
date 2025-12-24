@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class MenuItem(BaseModel):
     """Standard menu item structure."""
+
     id: str
     label: str
     description: str = ""
