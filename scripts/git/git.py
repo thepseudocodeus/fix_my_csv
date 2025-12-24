@@ -1,48 +1,104 @@
 import logging
 import subprocess
-from typing import Callable, Dict, List
+from typing import List
+from pathlib import Path
+import sys
 
+from InquirerPy import inquirer
+
+# Import from parent directory
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from interface import MenuItem, MenuModule
 
 logger = logging.getLogger("GitModule")
 
 
-# From documentation examples
+class GitService:
+    """Git command execution service."""
+
+    @staticmethod
+    def _run_cmd(args: List[str]) -> None:
+        """Helper to run git commands with logging."""
+        logger.info(f"Executing: {' '.join(args)}")
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Command failed: {result.stderr.strip()}")
+        else:
+            if result.stdout:
+                print(result.stdout.strip())
+
+    @staticmethod
+    def list_branches():
+        """List local branches."""
+        GitService._run_cmd(["git", "branch", "-v"])
+
+    @staticmethod
+    def list_all_branches():
+        """List all branches including remotes."""
+        GitService._run_cmd(["git", "branch", "-a"])
+
+    @staticmethod
+    def status():
+        """Show git status."""
+        GitService._run_cmd(["git", "status"])
+
+    @staticmethod
+    def push_to():
+        """Push changes to remote."""
+        branch = inquirer.text(
+            message="Branch name:",
+            default="main"
+        ).execute()
+        msg = inquirer.text(message="Commit message:").execute()
+
+        if branch:
+            msg = msg or "Update via Auto-Git"
+            GitService._run_cmd(["git", "add", "."])
+            GitService._run_cmd(["git", "commit", "-m", msg])
+            GitService._run_cmd(["git", "push", "origin", branch])
+        else:
+            logger.warning("Push aborted: No branch specified")
+
+    @staticmethod
+    def switch_branch():
+        """Switch to a different branch."""
+        to_branch = inquirer.text(message="Enter branch name:").execute()
+        if to_branch:
+            GitService._run_cmd(["git", "checkout", to_branch])
+
+
 class GitModule(MenuModule):
-    def __init__(self):
-        self._actions: Dict[str, Callable] = {
-            "ls": GitService.list_branches,
-            "lsa": GitService.list_all_branches,
-            "swb": GitService.switch_branch,
-            "status": GitService.status,
-            "push": GitService.push_to,
-        }
+    """Git automation module."""
 
     @property
-    def module_name(self) -> str:
+    def name(self) -> str:
         return "Git Automation"
 
-    def get_menu_items(self) -> List[MenuItem]:
+    def items(self) -> List[MenuItem]:
         return [
-            MenuItem(id="ls", label="List Branches", priority=1),
-            MenuItem(id="lsa", label="List All Branches", priority=2),
-            MenuItem(id="swb", label="Switch Branch", priority=3),
-            MenuItem(id="status", label="Check Status", priority=4),
-            MenuItem(id="push", label="Push to Repo", priority=5),
+            MenuItem(
+                id="status",
+                label="Check Status",
+                handler=GitService.status
+            ),
+            MenuItem(
+                id="ls",
+                label="List Branches",
+                handler=GitService.list_branches
+            ),
+            MenuItem(
+                id="lsa",
+                label="List All Branches",
+                handler=GitService.list_all_branches
+            ),
+            MenuItem(
+                id="swb",
+                label="Switch Branch",
+                handler=GitService.switch_branch
+            ),
+            MenuItem(
+                id="push",
+                label="Push to Repo",
+                handler=GitService.push_to
+            ),
         ]
-
-    def execute(self, item_id: str) -> None:
-        if item_id in self._actions:
-            logger.info(f"Executing Git action: {item_id}")
-            self._actions[item_id]()
-        else:
-            logger.error(f"Unknown action: {item_id}")
-
-    def setup(self) -> bool:
-        """Ensure git is available."""
-        try:
-            subprocess.run(["git", "--version"], capture_output=True, check=True)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logger.error("Git not found in PATH")
-            return False
